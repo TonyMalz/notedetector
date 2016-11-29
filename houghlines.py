@@ -83,32 +83,37 @@ edges = cv2.Canny(img, 100, 200)
 #         plt.plot(coords[0], coords[1], 'r-', linewidth=.5)
 # plt.show()
 
+def find_staff_lines(lines):
+    assert (len(lines) % 5 == 0), "Did not detect all staff lines"
+    if lines is not None:
+        staffLines = [[-1, -1, -1]]
+        i = 0
+        for yIntercept in lines:
+
+
+            if staffLines[i][0] < 0:
+                staffLines[i][0] = yIntercept
+            elif staffLines[i][1] < 0:
+                staffLines[i][1] = yIntercept
+                # calc mean diff
+                staffLines[i][2] = (staffLines[i][0] + staffLines[i][1]) / 2
+                staffLines.append([-1, -1, -1])
+                i += 1
+    staffLines.pop()
+    return staffLines
 
 # show all horizontal lines
 plt.imshow(img, cmap='gray', interpolation='none')
 plt.axis([0, 500, img.shape[0], 0])
 lines = find_horizontal_lines(edges)
-assert (len(lines)%5 == 0), "Did not detect all staff lines"
 if lines is not None:
-    staffLines = [[-1, -1, -1]]
-    i = 0
     for yIntercept in lines:
-        print(yIntercept)
         plt.plot((0, 1000), (yIntercept, yIntercept), 'r-', linewidth=.5)
-
-        if staffLines[i][0] < 0:
-            staffLines[i][0] = yIntercept
-        elif staffLines[i][1] < 0:
-            staffLines[i][1] = yIntercept
-            #calc mean diff
-            staffLines[i][2] = (staffLines[i][0] + staffLines[i][1]) / 2
-            staffLines.append([-1, -1, -1])
-            i += 1
-staffLines.pop()
 plt.show()
-print(staffLines)
 
-#show all staff lines
+
+# show all staff lines
+staffLines = find_staff_lines(lines)
 plt.imshow(img, cmap='gray', interpolation='none')
 plt.axis([0, 500, img.shape[0], 0])
 if staffLines is not None:
@@ -116,12 +121,40 @@ if staffLines is not None:
         yIntercept = line[2]
         plt.plot((0, 1000), (yIntercept, yIntercept), 'g-', linewidth=1)
 
-#calc staffline boundaries
-if len(staffLines) > 5:
-    thisBottomY = staffLines[4][1]
-    nextTopY = staffLines[5][0]
-    yIntercept = (thisBottomY + nextTopY) / 2
-    plt.plot((0, 1000), (yIntercept, yIntercept), 'r--', linewidth=1)
+
+def get_avg_staff_height(stafflines):
+    assert (len(lines) >= 5 ), "Did not detect all staff lines"
+    staff_edge_top_y = staffLines[0][0]
+    staff_edge_bottom_y = staffLines[4][1]
+    return staff_edge_bottom_y - staff_edge_top_y
+
+
+def get_rows(staffLines):
+    assert (len(staffLines) % 5 == 0), "Did not detect all staff lines"
+    staffHeight = get_avg_staff_height(staffLines)
+
+    # isolate staff rows
+    # first row starts at half the distance off of the first/top staff line edge
+    row_y_start = staffLines[0][0] - (staffHeight/2)
+    row_y_end = staffLines[4][1] + (staffHeight/2)
+
+    # contains all rows with corresponding start and end y-coords
+    rows = [[row_y_start, row_y_end]]
+
+    numrows = int(len(staffLines)/5)
+    # iterate over all remaining lines
+    for i in range(1, numrows):
+        row_y_start = staffLines[5*i][0] - (staffHeight / 2)
+        row_y_end = staffLines[(5*i)+4][1] + (staffHeight / 2)
+        rows.append([row_y_start, row_y_end])
+    return rows
+
+rows = get_rows(staffLines)
+for row in rows:
+    # start y
+    plt.plot((0, 1000), (row[0], row[0]), 'r--', linewidth=1)
+    # end y
+    plt.plot((0, 1000), (row[1], row[1]), 'r--', linewidth=1)
 
 plt.show()
 
