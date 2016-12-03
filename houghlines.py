@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-from builtins import print
+from collections import Counter
 
 
 def find_horizontal_lines(image):
@@ -26,7 +26,7 @@ def find_horizontal_lines(image):
         for rho, theta in line:
             # convert from polar to cartesian
             y = np.sin(theta) * rho
-            print(y, theta, rho)
+            # print(y, theta, rho)
             lines.append(y)
 
     lines.sort()
@@ -89,8 +89,6 @@ def find_staff_lines(lines):
         staffLines = [[-1, -1, -1]]
         i = 0
         for yIntercept in lines:
-
-
             if staffLines[i][0] < 0:
                 staffLines[i][0] = yIntercept
             elif staffLines[i][1] < 0:
@@ -103,23 +101,29 @@ def find_staff_lines(lines):
     return staffLines
 
 # show all horizontal lines
-plt.imshow(img, cmap='gray', interpolation='none')
-plt.axis([0, 500, img.shape[0], 0])
 lines = find_horizontal_lines(edges)
-if lines is not None:
-    for yIntercept in lines:
-        plt.plot((0, 1000), (yIntercept, yIntercept), 'r-', linewidth=.5)
-plt.show()
+
+
+def plot_edges(lines):
+    plt.imshow(img, cmap='gray', interpolation='none')
+    plt.axis([0, 500, img.shape[0], 0])
+    if lines is not None:
+        for yIntercept in lines:
+            plt.plot((0, 1000), (yIntercept, yIntercept), 'r-', linewidth=.5)
+    plt.show()
 
 
 # show all staff lines
 staffLines = find_staff_lines(lines)
-plt.imshow(img, cmap='gray', interpolation='none')
-plt.axis([0, 500, img.shape[0], 0])
-if staffLines is not None:
-    for line in staffLines:
-        yIntercept = line[2]
-        plt.plot((0, 1000), (yIntercept, yIntercept), 'g-', linewidth=1)
+
+def plot_stafflines(staffLines):
+    plt.imshow(img, cmap='gray', interpolation='none')
+    plt.axis([0, 500, img.shape[0], 0])
+    if staffLines is not None:
+        for line in staffLines:
+            yIntercept = line[2] # mean y value
+            plt.plot((0, 1000), (yIntercept, yIntercept), 'g-', linewidth=1)
+    plt.show()
 
 
 def get_avg_staff_height(stafflines):
@@ -129,14 +133,15 @@ def get_avg_staff_height(stafflines):
     return staff_edge_bottom_y - staff_edge_top_y
 
 
-def get_rows(staffLines):
+def get_row_coords(staffLines):
     assert (len(staffLines) % 5 == 0), "Did not detect all staff lines"
     staffHeight = get_avg_staff_height(staffLines)
 
     # isolate staff rows
     # first row starts at half the distance off of the first/top staff line edge
-    row_y_start = staffLines[0][0] - (staffHeight/2)
-    row_y_end = staffLines[4][1] + (staffHeight/2)
+    deltaLineMargin = staffHeight
+    row_y_start = staffLines[0][0] - deltaLineMargin
+    row_y_end = staffLines[4][1] + deltaLineMargin
 
     # contains all rows with corresponding start and end y-coords
     rows = [[row_y_start, row_y_end]]
@@ -144,19 +149,90 @@ def get_rows(staffLines):
     numrows = int(len(staffLines)/5)
     # iterate over all remaining lines
     for i in range(1, numrows):
-        row_y_start = staffLines[5*i][0] - (staffHeight / 2)
-        row_y_end = staffLines[(5*i)+4][1] + (staffHeight / 2)
+        row_y_start = staffLines[5*i][0] - deltaLineMargin
+        row_y_end = staffLines[(5*i)+4][1] + deltaLineMargin
         rows.append([row_y_start, row_y_end])
+
     return rows
 
-rows = get_rows(staffLines)
-for row in rows:
-    # start y
-    plt.plot((0, 1000), (row[0], row[0]), 'r--', linewidth=1)
-    # end y
-    plt.plot((0, 1000), (row[1], row[1]), 'r--', linewidth=1)
+rowCoords = get_row_coords(staffLines)
+print("Found %d rows" % len(rowCoords))
 
+
+
+
+
+def delete_staffline(img,row):
+    _, imgCols = img.shape
+    mostFreqValue = Counter(img[row].flat).most_common(1)[0][0]
+    if mostFreqValue < 10:
+        return
+    for j in range(0, imgCols):
+        if img[row][j] == mostFreqValue:
+            img[row][j] = 0
+
+
+img = cv2.bitwise_not(img)
+
+for i in range(0, len(staffLines)):
+    staffTop = staffLines[i][0] #- rowCoords[0][0] # y of first row
+    staffMiddle = staffLines[i][2]
+    staffBottom = staffLines[i][1]
+
+    delete_staffline(img, int(staffTop + .5))
+    delete_staffline(img, int(staffMiddle + .5))
+    delete_staffline(img, int(staffBottom + .5))
+
+    plt.plot((0, 1000), (staffTop, staffTop), 'r--', linewidth=1)
+    plt.plot((0, 1000), (staffMiddle, staffTop), 'g-', linewidth=1)
+    plt.plot((0, 1000), (staffBottom, staffBottom), 'r--', linewidth=1)
+
+
+plt.imshow(img, cmap='gray', interpolation='none')
+plt.axis([0, img.shape[1], img.shape[0], 0])
 plt.show()
+
+def split_img_into_rows(img, rowCoords):
+    rows = []
+    for rowY in rowCoords:
+        rows.append(img[int(rowY[0]):int(rowY[1])])
+    return rows
+
+rows = split_img_into_rows(img, rowCoords)
+# for row in rows:
+#     plt.imshow(row, cmap='gray', interpolation='none')
+#     plt.show()
+
+bw = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, -2)
+plt.imshow(bw, cmap='gray', interpolation='none')
+plt.axis([0, bw.shape[1], bw.shape[0], 0])
+plt.show()
+
+blur = cv2.GaussianBlur(bw,  (3, 3), 0)
+plt.imshow(cv2.bitwise_not(blur), cmap='gray', interpolation='none')
+plt.axis([0, blur.shape[1], blur.shape[0], 0])
+plt.show()
+
+# opening = np.copy(img)
+# kernel = np.ones((5, 5), np.uint8)
+# opening = cv2.morphologyEx(opening, cv2.MORPH_GRADIENT, kernel)
+# plt.imshow(opening, cmap='gray', interpolation='none')
+# plt.axis([0, opening.shape[1], opening.shape[0], 0])
+# plt.show()
+#
+vertical = np.copy(blur)
+kernel = np.ones((3, 1), np.uint8)
+vertical = cv2.erode(vertical, kernel)
+vertical = cv2.dilate(vertical, kernel)
+plt.imshow(cv2.bitwise_not(vertical), cmap='gray', interpolation='none')
+plt.axis([0, vertical.shape[1], vertical.shape[0], 0])
+plt.show()
+
+_, bw = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+plt.imshow(cv2.bitwise_not(bw), cmap='gray', interpolation='none')
+plt.axis([0, bw.shape[1], bw.shape[0], 0])
+plt.show()
+
 
 '''   sadfa
 acc_rho = 1  # pixel resolution
